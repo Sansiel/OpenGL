@@ -5,6 +5,7 @@ using OpenTK.Graphics;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Input;
 using System.Collections.Generic;
+using System.Drawing.Text;
 
 namespace KgOpenTK
 {
@@ -22,9 +23,9 @@ namespace KgOpenTK
         private Random Rand;
         Font serif = new Font(FontFamily.GenericSerif, 24);
 
-        private const int MapWidth = 16;
+        private const int MapWidth = 7; //16
         private const int MapHeight = 13;
-        private const int StickLength = 4;
+        private const int StickLength = 3;
         private int[] StickColors;
         private Vector2 StickPosition;
         private const int ColorsCount = 5;
@@ -44,10 +45,14 @@ namespace KgOpenTK
         private GameStateEnum GameState;
         private const float FallSpeed = 0.02f;
         private float[,] ImpactFallOffset;
-        private const int DestroyableLength = 5;
+        private const int DestroyableLength = 3;
         private Stack<Vector2> Destroyables = new Stack<Vector2>();
         private Texture TextureBackground;
         private Texture[] ColorTextures = new Texture[ColorsCount];
+        private int Score;
+        private int HighScore;
+        private TextRenderer NextStickLabel, ScoreLabel, ScoreRenderer, HighScoreLabel, HighScoreRenderer, GameOverLabel, GameOverHint;
+        private int[] NextStickColors;
 
         public Game()
             : base(NominalWidth, NominalHeight, GraphicsMode.Default, "Computer's grafics 4") {
@@ -55,11 +60,31 @@ namespace KgOpenTK
 
             KeyDown += new EventHandler<KeyboardKeyEventArgs>(OnKeyDown);
 
-            TextureBackground = new Texture(new Bitmap("textures/background.png"));
+            TextureBackground = new Texture(new Bitmap("C:/Users/User/source/repos/KgOpenGL/OpenTK/textures/background.png"));
             for (var i = 0; i < ColorsCount; i++)
             {
-                ColorTextures[i] = new Texture(new Bitmap("textures/solids/" + i + ".png"));
+                string str = "C:/Users/User/source/repos/KgOpenGL/OpenTK/textures/solids/" + i + ".png";
+                ColorTextures[i] = new Texture(new Bitmap(str));
             }
+
+            var LabelFont = new Font(new FontFamily(GenericFontFamilies.SansSerif), 20, GraphicsUnit.Pixel);
+            var LabelColor = Color4.SteelBlue;
+            NextStickLabel = new TextRenderer(LabelFont, LabelColor, "Next");
+            ScoreLabel = new TextRenderer(LabelFont, LabelColor, "Score");
+            HighScoreLabel = new TextRenderer(LabelFont, LabelColor, "High score");
+
+            var ScoreFont = new Font(new FontFamily(GenericFontFamilies.SansSerif), 50, GraphicsUnit.Pixel);
+            var ScoreColor = Color4.Tomato;
+            ScoreRenderer = new TextRenderer(ScoreFont, ScoreColor);
+            HighScoreRenderer = new TextRenderer(ScoreFont, ScoreColor);
+
+            var GameStateFont = new Font(new FontFamily(GenericFontFamilies.SansSerif), 30, GraphicsUnit.Pixel);
+            var GameStateColor = Color4.Tomato;
+            GameOverLabel = new TextRenderer(GameStateFont, GameStateColor, "Game over");
+
+            var GameStateHintFont = new Font(new FontFamily(GenericFontFamilies.SansSerif), 25, GraphicsUnit.Pixel);
+            var GameStateHintColor = Color4.SteelBlue;
+            GameOverHint = new TextRenderer(GameStateHintFont, GameStateHintColor, "Press Enter");
         }
 
         protected override void OnLoad(EventArgs E)
@@ -69,7 +94,7 @@ namespace KgOpenTK
             GL.Enable(EnableCap.Texture2D);
             GL.Enable(EnableCap.Blend);
 
-            GL.BlendFunc(BlendingFactorSrc.SrcAlpha, BlendingFactorDest.OneMinusSrcAlpha);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
             New();
         }
@@ -85,6 +110,14 @@ namespace KgOpenTK
             {
                 ProjectionHeight = NominalHeight;
                 ProjectionWidth = (float)ClientRectangle.Width / (float)ClientRectangle.Height * ProjectionHeight;
+            }
+            if (ClientSize.Width < NominalWidth)
+            {
+                ClientSize = new Size(NominalWidth, ClientSize.Height);
+            }
+            if (ClientSize.Height < NominalHeight)
+            {
+                ClientSize = new Size(ClientSize.Width, NominalHeight);
             }
         }
 
@@ -248,6 +281,20 @@ namespace KgOpenTK
             GL.LoadMatrix(ref Modelview);
 
             RenderBackground();
+
+            var PipeMarginY = (ProjectionHeight - MapHeight * SolidSize) / 2f;
+            var PipeMarginX = (NominalHeight - MapHeight * SolidSize) / 2f;
+
+            var Overwidth = ProjectionWidth - ProjectionHeight * (float)NominalWidth / NominalHeight;
+            if (Overwidth > 0)
+            {
+                GL.Translate(Math.Min(Overwidth, (ProjectionWidth - MapWidth * SolidSize) / 2f), PipeMarginY, 0);
+            }
+            else
+            {
+                GL.Translate(PipeMarginX, PipeMarginY, 0);
+            }
+
             RenderPipe();
 
             for (var X = 0; X < MapWidth; X++)
@@ -269,39 +316,64 @@ namespace KgOpenTK
                 }
             }
 
-            /*GL.Begin(BeginMode.Quads);
+            GL.Translate(MapWidth * SolidSize + PipeMarginX, 0, 0);
 
-            for (var X = 0; X < MapWidth; X++)
+            NextStickLabel.Render();
+            GL.Translate(0, NextStickLabel.Height, 0);
+            RenderNextStick();
+            GL.Translate(0, -NextStickLabel.Height, 0);
+
+            GL.Translate(0, MapHeight * SolidSize / 4f, 0);
+            if (GameStateEnum.GameOver == GameState)
             {
-                for (var Y = 0; Y < MapHeight; Y++)
-                {
-                    if (Map[X, Y] >= 0)
-                    {
-                        RenderSolid(X, Y + ImpactFallOffset[X, Y], Map[X, Y]);
-                    }
-                }
-            }
-            
-            if (GameStateEnum.Fall == GameState)
-            {
-                for (var i = 0; i < StickLength; i++)
-                {
-                    RenderSolid(StickPosition.X + i, StickPosition.Y, StickColors[i]);
-                }
+                GameOverLabel.Render();
+                GL.Translate(0, GameOverLabel.Height, 0);
+                GameOverHint.Render();
+                GL.Translate(0, -GameOverLabel.Height, 0);
             }
 
-            GL.End();*/
+            GL.Translate(0, MapHeight * SolidSize / 4f, 0);
+            ScoreLabel.Render();
+            GL.Translate(0, ScoreLabel.Height, 0);
+            ScoreRenderer.Label = Score.ToString();
+            ScoreRenderer.Render();
+            GL.Translate(0, -ScoreLabel.Height, 0);
+
+            GL.Translate(0, MapHeight * SolidSize / 4f, 0);
+            HighScoreLabel.Render();
+            GL.Translate(0, HighScoreLabel.Height, 0);
+            HighScoreRenderer.Label = HighScore.ToString();
+            HighScoreRenderer.Render();
+
 
             SwapBuffers();
         }
 
         private void RenderSolid(float X, float Y, int Color)
         {
-            GL.Color4(Colors[Color]);
+            ColorTextures[Color].Bind();
+            GL.Color4(Color4.White);
+            GL.Begin(BeginMode.Quads);
+
+            GL.TexCoord2(0, 0);
+            GL.Vertex2(X * SolidSize, Y * SolidSize);
+
+            GL.TexCoord2(1, 0);
+            GL.Vertex2((X + 1) * SolidSize, Y * SolidSize);
+
+            GL.TexCoord2(1, 1);
+            GL.Vertex2((X + 1) * SolidSize, (Y + 1) * SolidSize);
+
+            GL.TexCoord2(0, 1);
+            GL.Vertex2(X * SolidSize, (Y + 1) * SolidSize);
+
+            GL.End();
+
+            /*GL.Color4(Colors[Color]);
             GL.Vertex2(X * SolidSize, Y * SolidSize);
             GL.Vertex2((X + 1) * SolidSize, Y * SolidSize);
             GL.Vertex2((X + 1) * SolidSize, (Y + 1) * SolidSize);
-            GL.Vertex2(X * SolidSize, (Y + 1) * SolidSize);
+            GL.Vertex2(X * SolidSize, (Y + 1) * SolidSize);*/
         }
 
         protected void OnKeyDown(object Sender, KeyboardKeyEventArgs E)
@@ -353,7 +425,9 @@ namespace KgOpenTK
             }
 
             StickColors = new int[StickLength];
+            NextStickColors = new int[StickLength];
             GenerateNextStick();
+            GenerateNextStick(); // because 1st call makes current stick all zeros
             GameState = GameStateEnum.Fall;
             ImpactFallOffset = new float[MapWidth, MapHeight];
         }
@@ -362,7 +436,8 @@ namespace KgOpenTK
         {
             for (var i = 0; i < StickLength; i++)
             {
-                StickColors[i] = Rand.Next(ColorsCount);
+                StickColors[i] = NextStickColors[i];
+                NextStickColors[i] = Rand.Next(ColorsCount);
             }
             StickPosition.X = (float)Math.Floor((MapWidth - StickLength) / 2d);
             StickPosition.Y = 0;
@@ -390,6 +465,26 @@ namespace KgOpenTK
                 {
                     Destroyables.Push(new Vector2(X1 + i * DeltaX, Y1 + i * DeltaY));
                 }
+            }
+        }
+
+        public void RenderNextStick()
+        {
+            GL.Disable(EnableCap.Texture2D);
+            GL.Color4(Color4.Black);
+
+            GL.Begin(BeginMode.Quads);
+            GL.Vertex2(0, 0);
+            GL.Vertex2(StickLength * SolidSize, 0);
+            GL.Vertex2(StickLength * SolidSize, SolidSize);
+            GL.Vertex2(0, SolidSize);
+            GL.End();
+
+            GL.Enable(EnableCap.Texture2D);
+
+            for (var i = 0; i < StickLength; i++)
+            {
+                RenderSolid(i, 0, NextStickColors[i]);
             }
         }
     }
