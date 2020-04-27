@@ -6,6 +6,7 @@ using OpenTK.Graphics.OpenGL;
 using OpenTK.Input;
 using System.Collections.Generic;
 using System.Drawing.Text;
+using System.IO;
 
 namespace KgOpenTK
 {
@@ -53,6 +54,10 @@ namespace KgOpenTK
         private int HighScore;
         private TextRenderer NextStickLabel, ScoreLabel, ScoreRenderer, HighScoreLabel, HighScoreRenderer, GameOverLabel, GameOverHint;
         private int[] NextStickColors;
+        private int TotalDestroyedThisMove;
+        private string HighScoreFilename;
+        private bool Paused;
+        private TextRenderer PauseLabel, UnpauseHint, PlayingGameLabel, PauseHint;
 
         public Game()
             : base(NominalWidth, NominalHeight, GraphicsMode.Default, "Computer's grafics 4") {
@@ -81,10 +86,43 @@ namespace KgOpenTK
             var GameStateFont = new Font(new FontFamily(GenericFontFamilies.SansSerif), 30, GraphicsUnit.Pixel);
             var GameStateColor = Color4.Tomato;
             GameOverLabel = new TextRenderer(GameStateFont, GameStateColor, "Game over");
+            PauseLabel = new TextRenderer(GameStateFont, GameStateColor, "Pause");
+            PlayingGameLabel = new TextRenderer(GameStateFont, GameStateColor, "Playing");
 
             var GameStateHintFont = new Font(new FontFamily(GenericFontFamilies.SansSerif), 25, GraphicsUnit.Pixel);
             var GameStateHintColor = Color4.SteelBlue;
             GameOverHint = new TextRenderer(GameStateHintFont, GameStateHintColor, "Press Enter");
+            UnpauseHint = new TextRenderer(GameStateHintFont, GameStateHintColor, "Press Space");
+            PauseHint = new TextRenderer(GameStateHintFont, GameStateHintColor, "Space pauses");
+
+            var ConfigDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + Path.DirectorySeparatorChar + "ImpressiveSolids";
+            if (!Directory.Exists(ConfigDirectory))
+            {
+                Directory.CreateDirectory(ConfigDirectory);
+            }
+
+            HighScoreFilename = ConfigDirectory + Path.DirectorySeparatorChar + "HighScore.dat";
+            if (File.Exists(HighScoreFilename))
+            {
+                using (var Stream = new FileStream(HighScoreFilename, FileMode.Open))
+                {
+                    using (var Reader = new BinaryReader(Stream))
+                    {
+                        try
+                        {
+                            HighScore = Reader.ReadInt32();
+                        }
+                        catch (IOException)
+                        {
+                            HighScore = 0;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                HighScore = 0;
+            }
         }
 
         protected override void OnLoad(EventArgs E)
@@ -97,6 +135,7 @@ namespace KgOpenTK
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
             New();
+            Paused = true;
         }
 
         protected override void OnResize(EventArgs E)
@@ -124,6 +163,11 @@ namespace KgOpenTK
         protected override void OnUpdateFrame(FrameEventArgs E)
         {
             base.OnUpdateFrame(E);
+
+            if (Paused)
+            {
+                return;
+            }
 
             if (GameStateEnum.Fall == GameState)
             {
@@ -199,6 +243,8 @@ namespace KgOpenTK
                         {
                             Map[(int)Coords.X, (int)Coords.Y] = -1;
                         }
+                        Score += (int)Math.Ceiling(Destroyables.Count + Math.Pow(1.5, Destroyables.Count - 3) - 1) + TotalDestroyedThisMove;
+                        TotalDestroyedThisMove += Destroyables.Count;
                         Stabilized = false;
                     }
                 }
@@ -218,10 +264,23 @@ namespace KgOpenTK
                     if (GameOver)
                     {
                         GameState = GameStateEnum.GameOver;
+
+                        if (Score > HighScore)
+                        {
+                            HighScore = Score;
+                            using (var Stream = new FileStream(HighScoreFilename, FileMode.Create))
+                            {
+                                using (var Writer = new BinaryWriter(Stream))
+                                {
+                                    Writer.Write(HighScore);
+                                }
+                            }
+                        }
                     }
                     else
                     {
                         GenerateNextStick();
+                        TotalDestroyedThisMove = 0;
                         GameState = GameStateEnum.Fall;
                     }
                 }
@@ -331,6 +390,20 @@ namespace KgOpenTK
                 GameOverHint.Render();
                 GL.Translate(0, -GameOverLabel.Height, 0);
             }
+            else if (Paused)
+            {
+                PauseLabel.Render();
+                GL.Translate(0, PauseLabel.Height, 0);
+                UnpauseHint.Render();
+                GL.Translate(0, -PauseLabel.Height, 0);
+            }
+            else
+            {
+                PlayingGameLabel.Render();
+                GL.Translate(0, PlayingGameLabel.Height, 0);
+                PauseHint.Render();
+                GL.Translate(0, -PlayingGameLabel.Height, 0);
+            }
 
             GL.Translate(0, MapHeight * SolidSize / 4f, 0);
             ScoreLabel.Render();
@@ -378,7 +451,7 @@ namespace KgOpenTK
 
         protected void OnKeyDown(object Sender, KeyboardKeyEventArgs E)
         {
-            if (GameStateEnum.Fall == GameState)
+            if ((GameStateEnum.Fall == GameState) && !Paused)
             {
                 if ((Key.Left == E.Key) && (StickPosition.X > 0))
                 {
@@ -409,6 +482,11 @@ namespace KgOpenTK
                     New();
                 }
             }
+
+            if (((GameStateEnum.Fall == GameState) || (GameStateEnum.Impact == GameState)) && (Key.Space == E.Key))
+            {
+                Paused = !Paused;
+            }
         }
 
         private void New()
@@ -430,6 +508,8 @@ namespace KgOpenTK
             GenerateNextStick(); // because 1st call makes current stick all zeros
             GameState = GameStateEnum.Fall;
             ImpactFallOffset = new float[MapWidth, MapHeight];
+            Score = 0;
+            TotalDestroyedThisMove = 0;
         }
 
         private void GenerateNextStick()
