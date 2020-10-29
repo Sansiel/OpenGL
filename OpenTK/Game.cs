@@ -24,9 +24,9 @@ namespace KgOpenTK
         private Random Rand;
         Font serif = new Font(FontFamily.GenericSerif, 24);
 
-        private const int MapWidth = 7; //16
+        private const int MapWidth = 13; //16
         private const int MapHeight = 13;
-        private const int StickLength = 3;
+        private const int StickLength = 4;
         private int[] StickColors;
         private Vector2 StickPosition;
         private const int ColorsCount = 5;
@@ -46,7 +46,7 @@ namespace KgOpenTK
         private GameStateEnum GameState;
         private const float FallSpeed = 0.02f;
         private float[,] ImpactFallOffset;
-        private const int DestroyableLength = 3;
+        private const int DestroyableLength = 5;
         private Stack<Vector2> Destroyables = new Stack<Vector2>();
         private Texture TextureBackground;
         private Texture[] ColorTextures = new Texture[ColorsCount];
